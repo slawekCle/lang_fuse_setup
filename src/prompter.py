@@ -34,7 +34,8 @@ class Prompter:
         content = ""
         with span_context as span:
             generation_context = (
-                span.start_as_current_generation(
+                span.start_as_current_observation(
+                    as_type="generation",
                     name="prompter.chat_completion",
                     model="main",
                     model_parameters={
@@ -152,5 +153,5 @@ class Prompter:
             else None
         )
         if public_key and secret_key:
-            return Langfuse(public_key=public_key, secret_key=secret_key)
+            return Langfuse(public_key=public_key, secret_key=secret_key, host=settings.LANGFUSE_HOST)
         return None

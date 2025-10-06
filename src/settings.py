@@ -7,6 +7,8 @@ class Settings(BaseSettings):
     LITELLM_URL: str | None = None
     LANGFUSE_PUBLIC_KEY: SecretStr | None = None
     LANGFUSE_SECRET_KEY: SecretStr | None = None
+    LANGFUSE_HOST: str | None = None
+
 
     model_config = SettingsConfigDict(
         env_file=".env",
