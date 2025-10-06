@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import nullcontext
 from typing import Optional
 
 from langfuse import Langfuse
@@ -20,58 +21,71 @@ class Prompter:
     def run(self, prompt: str) -> str:
         """ run prompt"""
 
-        trace = None
-        generation = None
-        if self.langfuse:
-            trace = self.langfuse.trace(
+        span_context = (
+            self.langfuse.start_as_current_span(
                 name="prompter.run",
                 input={"prompt": prompt},
                 metadata={"base_url": self.base_url},
             )
-            generation = trace.generation(
-                name="prompter.chat_completion",
-                model="main",
-                model_parameters={
-                    "temperature": 1,
-                    "max_tokens": 8192,
-                    "stream": False,
-                    "stop": None,
-                },
-                input=prompt,
-            )
+            if self.langfuse
+            else nullcontext()
+        )
 
-        try:
-            completion = self.client.chat.completions.create(
-                model="main",
-                messages=[{"role": "user", "content": prompt}],
-                temperature=1,
-                max_tokens=8192,
-                stream=False,
-                stop=None,
-            )
-        except Exception as exc:  # pragma: no cover - best effort logging
-            if generation:
-                generation.update(
-                    level="ERROR",
-                    status_message=str(exc),
-                    metadata={"exception_type": type(exc).__name__},
+        content = ""
+        with span_context as span:
+            generation_context = (
+                span.start_as_current_generation(
+                    name="prompter.chat_completion",
+                    model="main",
+                    model_parameters={
+                        "temperature": 1,
+                        "max_tokens": 8192,
+                        "stream": False,
+                        "stop": None,
+                    },
+                    input=prompt,
                 )
-            if trace:
-                trace.update(
-                    level="ERROR",
-                    status_message=str(exc),
-                )
-            raise
-
-        content = self._extract_completion_content(completion)
-
-        if generation:
-            generation.update(
-                output=content,
-                usage=getattr(completion, "usage", None),
+                if span
+                else nullcontext()
             )
-        if trace:
-            trace.update(output=content)
+
+            with generation_context as generation:
+                try:
+                    completion = self.client.chat.completions.create(
+                        model="main",
+                        messages=[{"role": "user", "content": prompt}],
+                        temperature=1,
+                        max_tokens=8192,
+                        stream=False,
+                        stop=None,
+                    )
+                except Exception as exc:  # pragma: no cover - best effort logging
+                    if generation:
+                        generation.update(
+                            level="ERROR",
+                            status_message=str(exc),
+                            metadata={"exception_type": type(exc).__name__},
+                        )
+                    if span:
+                        span.update(
+                            level="ERROR",
+                            status_message=str(exc),
+                        )
+                    raise
+
+                content = self._extract_completion_content(completion)
+                usage_details = self._extract_usage_details(
+                    getattr(completion, "usage", None)
+                )
+
+                if generation:
+                    update_kwargs = {"output": content}
+                    if usage_details is not None:
+                        update_kwargs["usage_details"] = usage_details
+                    generation.update(**update_kwargs)
+
+            if span:
+                span.update(output=content)
 
         return content
 
@@ -104,6 +118,25 @@ class Prompter:
                     return content
 
         return ""
+
+    @staticmethod
+    def _extract_usage_details(usage: object) -> Optional[dict]:
+        if usage is None:
+            return None
+
+        extractors = ("model_dump", "to_dict", "dict")
+        for method_name in extractors:
+            method = getattr(usage, method_name, None)
+            if callable(method):
+                try:
+                    return method()
+                except Exception:  # pragma: no cover - best effort normalization
+                    continue
+
+        if isinstance(usage, dict):
+            return usage
+
+        return None
 
     @staticmethod
     def _initialize_langfuse() -> Optional[Langfuse]:
