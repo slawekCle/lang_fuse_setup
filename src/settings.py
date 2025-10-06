@@ -3,8 +3,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    LITELLM_MASTER_KEY: SecretStr = None
-    LITELLM_URL: str = None
+    LITELLM_MASTER_KEY: SecretStr | None = None
+    LITELLM_URL: str | None = None
+    LANGFUSE_PUBLIC_KEY: SecretStr | None = None
+    LANGFUSE_SECRET_KEY: SecretStr | None = None
 
     model_config = SettingsConfigDict(
         env_file=".env",
