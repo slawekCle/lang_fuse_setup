@@ -1,0 +1,14 @@
+model_list:
+  - model_name: main
+    litellm_params:
+      model: groq/openai/gpt-oss-20b
+
+  - model_name: main
+    litellm_params:
+      model: openai/gpt-5-nano
+
+router_settings:
+  timeout: 60
+  retry_policy:
+    max_retries: 2
+    min_backoff_seconds: 1
